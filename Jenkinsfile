@@ -65,7 +65,7 @@ pipeline {
         stage('Push to Docker Hub') {
             steps {
                 script {
-                    docker.withRegistry('https://registry-1.docker.io/v2/', 'naseemshaikdba/jenkins-github-repo') {
+                    docker.withRegistry('https://registry-1.docker.io/v2/', 'docker-hub-naseemshaikdba') {
 
                         // Push with build number tag
                         dockerImage.push("${env.IMAGE_TAG}")
