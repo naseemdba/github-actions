@@ -9,7 +9,7 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_REPO  = 'cloudprakhargupta/jenkins-int'
+        DOCKERHUB_REPO  = 'naseemshaikdba/jenkins-github-repo'
         IMAGE_TAG       = "${env.BUILD_NUMBER}"
         LATEST_TAG      = 'latest'
         DOCKERFILE_PATH = 'Dockerfile'
