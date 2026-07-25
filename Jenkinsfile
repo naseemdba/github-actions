@@ -1,50 +1,108 @@
 pipeline {
     agent any
-    
+
+    options {
+        timestamps()
+        timeout(time: 20, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+    }
+
     environment {
-        APP_NAME = "Test-App"
-        APP_VERSION = "1.0.0"
-        APP_ENV = "dev"
+        DOCKERHUB_REPO  = 'cloudprakhargupta/jenkins-int'
+        IMAGE_TAG       = "${env.BUILD_NUMBER}"
+        LATEST_TAG      = 'latest'
+        DOCKERFILE_PATH = 'Dockerfile'
     }
 
     stages {
-        stage("Build") {
+
+        stage('Checkout') {
             steps {
-                echo "Building Application..."
-                echo "Building App with name ${APP_NAME}"
-                echo "App version is ${APP_VERSION}"
-                
-                // Simulate failure if needed
-                sh 'exit 0'   // change to exit 1 to test failure
+                checkout scm
+                echo "Branch: ${env.GIT_BRANCH}"
+                echo "Commit: ${env.GIT_COMMIT}"
             }
         }
-        
-        stage("Test") {
+
+        stage('Docker Lint') {
             steps {
-                echo "Testing Application..."
-                sh 'echo "Running tests..."'
+                sh '''
+                    echo "Validating Dockerfile..."
+                    docker --version
+                    # Optional: install hadolint for Dockerfile linting
+                    # hadolint Dockerfile
+                '''
             }
         }
-        
-        stage("Deploy") {
+
+        stage('Build Image') {
             steps {
-                echo "Deploying Application..."
-                sh 'echo "Deploy complete"'
+                script {
+                    echo "Building image: ${env.DOCKERHUB_REPO}:${env.IMAGE_TAG}"
+
+                    dockerImage = docker.build(
+                        "${env.DOCKERHUB_REPO}:${env.IMAGE_TAG}",
+                        "--file ${env.DOCKERFILE_PATH} ."
+                    )
+                }
+            }
+        }
+
+        stage('Test Image') {
+            steps {
+                script {
+                    // Run a quick smoke test inside the container
+                    dockerImage.inside {
+                        sh 'echo "Container is running — add your test commands here"'
+                        // sh 'python -m pytest tests/'
+                        // sh 'npm test'
+                    }
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('https://registry-1.docker.io/v2/', 'docker-hub-naseemshaikdba') {
+
+                        // Push with build number tag
+                        dockerImage.push("${env.IMAGE_TAG}")
+
+                        // Also push as latest only on main branch
+                        if (env.GIT_BRANCH == 'origin/main' || env.GIT_BRANCH == 'main') {
+                            dockerImage.push("${env.LATEST_TAG}")
+                            echo "✅ Pushed latest tag"
+                        }
+
+                        echo "✅ Pushed ${env.DOCKERHUB_REPO}:${env.IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+
+        stage('Cleanup Local Image') {
+            steps {
+                sh """
+                    docker rmi ${env.DOCKERHUB_REPO}:${env.IMAGE_TAG} || true
+                    docker rmi ${env.DOCKERHUB_REPO}:${env.LATEST_TAG} || true
+                    docker image prune -f
+                """
             }
         }
     }
 
     post {
         success {
-            echo "Pipeline is successful"
+            echo "✅ Image pushed: ${env.DOCKERHUB_REPO}:${env.IMAGE_TAG}"
         }
         failure {
-            echo "Pipeline failed"
+            echo "❌ Build failed — cleaning up dangling images"
+            sh 'docker image prune -f || true'
         }
         always {
-            echo "Cleanup: clearing workspace and logs..."
-            cleanWs()   // Jenkins built-in step to clear workspace
-            sh 'rm -rf /var/log/myapp/* || true'  // example log cleanup
+            cleanWs()
         }
     }
 }
